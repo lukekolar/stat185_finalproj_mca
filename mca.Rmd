@@ -1,24 +1,84 @@
 ---
-title: "mca"
+title: "MCA Demonstration with Election / Demographic Data"
 author: "Luke Kolar"
 date: "2022-12-07"
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-citation("FactoMiner")
-citation("factoextra")
 library(factoextra)
-library(FactoMiner)
 library(tidyverse)
+library(readxl)
 library(janitor)
 ```
 
 
 ```{r}
-read.csv("co-est2021-alldata.csv") %>% 
+# Gathering county population trajectory and percent change during COVID
+population <- read.csv(paste0(getwd(), "/data/county_pop_20-21.csv")) %>% 
   clean_names() %>% 
   filter(stname %in% c("Minnesota", "Wisconsin", "Michigan"),
-         !county == 0)
+         !county == 0) %>% 
+  select(stname, ctyname, popestimate2020, popestimate2021, npopchg2021) %>% 
+  rename(state = stname, county = ctyname, 
+         pop2020 = popestimate2020, pop2021 = popestimate2021,
+         change = npopchg2021) %>% 
+  mutate(perc_change = 100*change/pop2020, 
+         gain_loss = ifelse(change > 0, "gain", "loss")) %>% 
+  select(state, county, gain_loss, perc_change)
 ```
+
+```{r}
+# Gathering county population density
+density <- read.csv(paste0(getwd(), "/data/county_dens_14-18.csv")) %>% 
+  rename(popdensity = B01001_calc_PopDensity) %>% 
+  clean_names() %>% 
+  rename(county = name) %>% 
+  filter(state %in% c("Minnesota", "Wisconsin", "Michigan"),
+         !county == 0) %>% 
+  select(state, county, popdensity)
+```
+
+```{r}
+# Gathering county winners and Trump minus Biden vote share
+pres <- read.csv(paste0(getwd(), "/data/county_pres_00-20.csv")) %>% 
+  rename(county = county_name) %>% 
+  mutate(county = paste0(str_to_title(county), " County"),
+         state = str_to_title(state)) %>% 
+  filter(year == 2020, 
+         state %in% c("Minnesota", "Wisconsin", "Michigan")) %>% 
+  mutate(perc = 100*candidatevotes/totalvotes,
+         candidate = ifelse(candidate == "JOSEPH R BIDEN JR", "biden",
+                            ifelse(candidate == "DONALD J TRUMP", "trump",
+                                   "other"))) %>% 
+  filter(candidate %in% c("biden", "trump")) %>% 
+  select(state, county, candidate, perc) %>% 
+  group_by(state, county) %>% 
+  pivot_wider(names_from = "candidate", values_from = "perc") %>% 
+  ungroup() %>% 
+  mutate(winner = ifelse(biden > trump, "biden", "trump"),
+         diff = trump - biden) %>% 
+  select(state, county, winner, diff)
+```
+
+```{r}
+# Gathering county categorizations
+read_xlsx(paste0(getwd(), "/data/county_cat_13.xlsx")) %>% 
+  clean_names() %>% 
+  rename(state = state_abr, county = county_name) %>% 
+  mutate(state = ifelse(state == "MN", "Minnesota",
+                        ifelse(state == "WI", "Wisconsin",
+                               ifelse(state == "MI", "Michigan", 
+                                      state)))) %>% 
+  filter(state %in% c("Minnesota", "Wisconsin", "Michigan")) %>% 
+  rename(cl = x2013_code) %>% 
+  mutate(cl = ifelse(cl == 1, "LCM",
+                     ifelse(cl == 2, "LFM",
+                            ifelse(cl == 3, "MM",
+                                   ifelse(cl == 4, "SM", 
+                                          ifelse(cl == 5, "M", "N")))))) %>% 
+  rename(abbr = cl) %>% 
+  select(state, county, abbr)
+```
+
 

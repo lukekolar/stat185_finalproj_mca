@@ -1,0 +1,24 @@
+---
+title: "mca"
+author: "Luke Kolar"
+date: "2022-12-07"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+citation("FactoMiner")
+citation("factoextra")
+library(factoextra)
+library(FactoMiner)
+library(tidyverse)
+library(janitor)
+```
+
+
+```{r}
+read.csv("co-est2021-alldata.csv") %>% 
+  clean_names() %>% 
+  filter(stname %in% c("Minnesota", "Wisconsin", "Michigan"),
+         !county == 0)
+```
+

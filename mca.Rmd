@@ -5,15 +5,16 @@ date: "2022-12-07"
 output: pdf_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup, message = F, warning = F}
 library(factoextra)
+library(FactoMineR)
+library(ca)
 library(tidyverse)
 library(readxl)
 library(janitor)
 ```
 
-
-```{r}
+```{r, message = F, warning = F}
 # Gathering county population trajectory and percent change during COVID
 population <- read.csv(paste0(getwd(), "/data/county_pop_20-21.csv")) %>% 
   clean_names() %>% 
@@ -25,10 +26,11 @@ population <- read.csv(paste0(getwd(), "/data/county_pop_20-21.csv")) %>%
          change = npopchg2021) %>% 
   mutate(perc_change = 100*change/pop2020, 
          gain_loss = ifelse(change > 0, "gain", "loss")) %>% 
-  select(state, county, gain_loss, perc_change)
+  select(state, county, gain_loss, perc_change) %>% 
+  mutate(county = gsub(" County", "", county))
 ```
 
-```{r}
+```{r, message = F, warning = F}
 # Gathering county population density
 density <- read.csv(paste0(getwd(), "/data/county_dens_14-18.csv")) %>% 
   rename(popdensity = B01001_calc_PopDensity) %>% 
@@ -36,7 +38,8 @@ density <- read.csv(paste0(getwd(), "/data/county_dens_14-18.csv")) %>%
   rename(county = name) %>% 
   filter(state %in% c("Minnesota", "Wisconsin", "Michigan"),
          !county == 0) %>% 
-  select(state, county, popdensity)
+  select(state, county, popdensity) %>% 
+  mutate(county = gsub(" County", "", county))
 ```
 
 ```{r}
@@ -58,12 +61,13 @@ pres <- read.csv(paste0(getwd(), "/data/county_pres_00-20.csv")) %>%
   ungroup() %>% 
   mutate(winner = ifelse(biden > trump, "biden", "trump"),
          diff = trump - biden) %>% 
-  select(state, county, winner, diff)
+  select(state, county, winner, diff) %>% 
+  mutate(county = gsub(" County", "", county))
 ```
 
-```{r}
+```{r, message = F, warning = F}
 # Gathering county categorizations
-read_xlsx(paste0(getwd(), "/data/county_cat_13.xlsx")) %>% 
+abbrs <- read_xlsx(paste0(getwd(), "/data/county_cat_13.xlsx")) %>% 
   clean_names() %>% 
   rename(state = state_abr, county = county_name) %>% 
   mutate(state = ifelse(state == "MN", "Minnesota",
@@ -76,9 +80,98 @@ read_xlsx(paste0(getwd(), "/data/county_cat_13.xlsx")) %>%
                      ifelse(cl == 2, "LFM",
                             ifelse(cl == 3, "MM",
                                    ifelse(cl == 4, "SM", 
-                                          ifelse(cl == 5, "M", "N")))))) %>% 
+                                          ifelse(cl == 5, "M", "NC")))))) %>% 
   rename(abbr = cl) %>% 
-  select(state, county, abbr)
+  select(state, county, abbr) %>% 
+  mutate(county = gsub(" County", "", county))
 ```
+
+
+```{r}
+# Joining all tables and implementing corrections
+joined <- as.data.frame(as.matrix(population %>% 
+  inner_join(density, by = c("state", "county")) %>% 
+  inner_join(abbrs, by = c("state", "county")) %>% 
+  mutate(county = gsub("St. Louis", "Saint Louis", county)) %>% 
+  mutate(county = str_to_title(county)) %>% 
+  full_join(pres, by = c("state", "county")) %>%
+  mutate(state_code = ifelse(state == "Minnesota", "MN",
+                             ifelse(state == "Wisconsin", "WI",
+                                    "MI"))) %>% 
+  mutate(county = ifelse(county == "Brown", paste0("Brown (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Cass", paste0("Cass (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Chippewa", paste0("Chippewa (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Crawford", paste0("Crawford (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Dodge", paste0("Dodge (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Douglas", paste0("Douglas (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Grant", paste0("Grant (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Iron", paste0("Iron (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Jackson", paste0("Jackson (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Lake", paste0("Lake (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Lincoln", paste0("Lincoln (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Marquette", paste0("Marquette (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Menominee", paste0("Menominee (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Monroe", paste0("Monroe (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Polk", paste0("Polk (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Rock", paste0("Rock (", state_code, ")"), county)) %>% 
+  mutate(county = ifelse(county == "Washington", paste0("Washington (", state_code, ")"), county))))
+rownames(joined) <- joined$county
+
+all_vars <- joined %>% 
+  select(winner, abbr, gain_loss, diff, popdensity, perc_change)
+```
+
+```{r}
+# Here are our final qualitative and quantitative data matrices!
+qual_vars <- all_vars %>% 
+  select(winner:gain_loss)
+quant_vars <- all_vars %>% 
+  select(diff:perc_change) %>% 
+  mutate(diff = as.numeric(diff),
+         popdensity = as.numeric(popdensity),
+         perc_change = as.numeric(perc_change))
+```
+
+```{r, message = F, warning = F}
+# MCA functions and plots
+out <- MCA(qual_vars, ncp = 5)
+
+fviz_screeplot(out, addlabels = TRUE, ylim = c(0, 25))
+
+out$eig
+
+fviz_mca_var(out, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE, # avoid text overlapping (slow)
+             ggtheme = theme_minimal(), 
+             xlab = "Dim. 1", ylab = "Dim. 2")
+
+fviz_mca_ind(out, col.ind = "cos2", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE, ggtheme = theme_minimal(), 
+             xlab = "Dim. 1", ylab = "Dim. 2")
+```
+
+```{r, message = F, warning = F}
+# PCA functions and plots
+out_PCA <- PCA(quant_vars, ncp = 5)
+
+fviz_screeplot(out_PCA, addlabels = TRUE, ylim = c(0, 60))
+
+fviz_pca_var(out_PCA, repel = TRUE, ggtheme = theme_minimal())
+
+fviz_pca_ind(out_PCA, col.ind = "cos2", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE, ggtheme = theme_minimal())
+```
+
+
+
+
+
+
+
+
+
 
 

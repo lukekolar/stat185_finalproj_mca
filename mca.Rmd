@@ -163,15 +163,6 @@ fviz_pca_var(out_PCA, repel = TRUE, ggtheme = theme_minimal())
 fviz_pca_ind(out_PCA, col.ind = "cos2", 
              gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
              repel = TRUE, ggtheme = theme_minimal())
+ggsave("mca_scree.png", width = 10, height = 7.5, units = "cm")
 ```
-
-
-
-
-
-
-
-
-
-
 
